@@ -143,9 +143,30 @@ jobs:
         run: |
           echo "🔍 执行深度清理..."
           
-          # 1. 清理项目中的所有xcuserdata
-          echo "清理项目xcuserdata..."
-          find . -name "xcuserdata" -type d -exec rm -rf {} + 2>/dev/null || true
+          # 0. 首先明确清理项目和workspace的xcuserdata（最关键！）
+          echo "清理项目和workspace的xcuserdata..."
+          
+          # 清理主项目
+          if [ -d "*.xcodeproj/xcuserdata" ]; then
+            rm -rf *.xcodeproj/xcuserdata
+            echo "  ✓ 已清理 *.xcodeproj/xcuserdata"
+          fi
+          
+          # 清理项目内嵌的workspace
+          if [ -d "*.xcodeproj/project.xcworkspace/xcuserdata" ]; then
+            rm -rf *.xcodeproj/project.xcworkspace/xcuserdata
+            echo "  ✓ 已清理 *.xcodeproj/project.xcworkspace/xcuserdata"
+          fi
+          
+          # 清理工作空间
+          if [ -d "*.xcworkspace/xcuserdata" ]; then
+            rm -rf *.xcworkspace/xcuserdata
+            echo "  ✓ 已清理 *.xcworkspace/xcuserdata"
+          fi
+          
+          # 1. 清理所有剩余的xcuserdata（递归查找）
+          echo "清理所有xcuserdata目录..."
+          find . -name "xcuserdata" -type d -print -exec rm -rf {} + 2>/dev/null || true
           
           # 2. 清理DerivedData
           echo "清理DerivedData..."
@@ -166,22 +187,45 @@ jobs:
           find . -name "*.perspectivev3" -type f -delete 2>/dev/null || true
           find . -name "*.xcuserstate" -type f -delete 2>/dev/null || true
           
-          # 6. 验证清理结果
+          # 6. 详细验证清理结果
           echo ""
           echo "📊 验证清理结果:"
-          XCUSERDATA_COUNT=$(find . -name "xcuserdata" -type d 2>/dev/null | wc -l | tr -d ' ')
+          
+          # 检查关键位置
+          PROJECT_XCUSERDATA=$(find *.xcodeproj -name "xcuserdata" -type d 2>/dev/null | wc -l | tr -d ' ')
+          WORKSPACE_XCUSERDATA=$(find *.xcworkspace -name "xcuserdata" -type d 2>/dev/null | wc -l | tr -d ' ')
+          PODS_XCUSERDATA=$(find Pods -name "xcuserdata" -type d 2>/dev/null | wc -l | tr -d ' ')
+          TOTAL_XCUSERDATA=$(find . -name "xcuserdata" -type d 2>/dev/null | wc -l | tr -d ' ')
           XCUSERSTATE_COUNT=$(find . -name "*.xcuserstate" -type f 2>/dev/null | wc -l | tr -d ' ')
           
-          if [ "$XCUSERDATA_COUNT" -eq "0" ] && [ "$XCUSERSTATE_COUNT" -eq "0" ]; then
-            echo "✅ 清理验证通过 - 未发现用户特定文件"
+          echo "  项目xcuserdata: $PROJECT_XCUSERDATA"
+          echo "  Workspace xcuserdata: $WORKSPACE_XCUSERDATA"
+          echo "  Pods xcuserdata: $PODS_XCUSERDATA"
+          echo "  总计xcuserdata: $TOTAL_XCUSERDATA"
+          echo "  xcuserstate文件: $XCUSERSTATE_COUNT"
+          
+          if [ "$TOTAL_XCUSERDATA" -eq "0" ] && [ "$XCUSERSTATE_COUNT" -eq "0" ]; then
+            echo ""
+            echo "✅ 清理验证通过 - 未发现任何用户特定文件"
           else
-            echo "⚠️  警告: 仍有 $XCUSERDATA_COUNT 个xcuserdata目录"
-            echo "⚠️  警告: 仍有 $XCUSERSTATE_COUNT 个xcuserstate文件"
-            # 再次尝试清理
-            find . -name "xcuserdata" -type d -print -exec rm -rf {} + 2>/dev/null || true
-            find . -name "*.xcuserstate" -type f -print -delete 2>/dev/null || true
+            echo ""
+            echo "⚠️  警告: 发现残留文件！"
+            if [ "$TOTAL_XCUSERDATA" -gt "0" ]; then
+              echo "  残留xcuserdata目录:"
+              find . -name "xcuserdata" -type d 2>/dev/null | head -10
+            fi
+            if [ "$XCUSERSTATE_COUNT" -gt "0" ]; then
+              echo "  残留xcuserstate文件:"
+              find . -name "*.xcuserstate" -type f 2>/dev/null | head -10
+            fi
+            
+            # 最后一次强力清理
+            echo "  执行最后一次清理..."
+            find . -name "xcuserdata" -type d -exec rm -rf {} + 2>/dev/null || true
+            find . -name "*.xcuserstate" -type f -delete 2>/dev/null || true
           fi
           
+          echo ""
           echo "✓ 深度清理完成"
       
       - name: 🔐 导入证书和Provisioning Profile
