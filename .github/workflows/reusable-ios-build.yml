@@ -70,9 +70,52 @@ jobs:
         with:
           xcode-version: ${{ inputs.xcode_version }}
       
-      - name: 📦 安装CocoaPods依赖
+      - name: 🧹 清理Pods中的用户标识信息
         run: |
-          pod install
+          echo "🔍 检查并清理Pods目录中的敏感信息..."
+          
+          # 1. 清理Pods项目中的所有xcuserdata（包含用户名和设备信息）
+          if [ -d "Pods" ]; then
+            echo "清理Pods中的xcuserdata..."
+            find Pods -name "xcuserdata" -type d -exec rm -rf {} + 2>/dev/null || true
+            
+            # 2. 清理Pods项目中的xcuserstate文件
+            echo "清理xcuserstate文件..."
+            find Pods -name "*.xcuserstate" -type f -delete 2>/dev/null || true
+            
+            # 3. 清理Pods项目中的xcscheme文件（可能包含用户特定配置）
+            echo "清理用户scheme文件..."
+            find Pods -path "*/xcuserdata/*.xcuserdatad/xcschemes/*.xcscheme" -type f -delete 2>/dev/null || true
+            
+            # 4. 清理其他可能的元数据
+            find Pods -name ".DS_Store" -type f -delete 2>/dev/null || true
+            find Pods -name "*.pbxuser" -type f -delete 2>/dev/null || true
+            find Pods -name "*.perspectivev3" -type f -delete 2>/dev/null || true
+            find Pods -name "*.mode1v3" -type f -delete 2>/dev/null || true
+            
+            echo "✓ Pods清理完成"
+          else
+            echo "Pods目录不存在，跳过清理"
+          fi
+      
+      - name: 📦 完全重新安装CocoaPods依赖
+        run: |
+          echo "完全清理并重新安装Pods..."
+          
+          # 删除所有Pods相关文件
+          rm -rf Pods/
+          rm -rf Podfile.lock
+          
+          # 清理CocoaPods缓存
+          pod cache clean --all 2>/dev/null || true
+          
+          # 重新安装（这将生成全新的Pods项目，不包含任何用户信息）
+          pod install --repo-update
+          
+          # 再次确保没有xcuserdata被生成
+          find Pods -name "xcuserdata" -type d -exec rm -rf {} + 2>/dev/null || true
+          
+          echo "✓ Pods重新安装完成"
       
       - name: 🎭 生成动态混淆代码
         run: |
@@ -96,18 +139,50 @@ jobs:
             echo "跳过混淆步骤"
           fi
       
-      - name: 🧹 深度清理
+      - name: 🧹 深度清理（确保无残留用户信息）
         run: |
-          echo "清理xcuserdata..."
+          echo "🔍 执行深度清理..."
+          
+          # 1. 清理项目中的所有xcuserdata
+          echo "清理项目xcuserdata..."
           find . -name "xcuserdata" -type d -exec rm -rf {} + 2>/dev/null || true
           
+          # 2. 清理DerivedData
           echo "清理DerivedData..."
           rm -rf ~/Library/Developer/Xcode/DerivedData/*
           
+          # 3. 清理build目录
           echo "清理build目录..."
           rm -rf build/
           
-          echo "✓ 清理完成"
+          # 4. 清理所有.DS_Store
+          echo "清理.DS_Store..."
+          find . -name ".DS_Store" -type f -delete 2>/dev/null || true
+          
+          # 5. 清理Xcode特定的用户文件
+          echo "清理Xcode用户文件..."
+          find . -name "*.pbxuser" -type f -delete 2>/dev/null || true
+          find . -name "*.mode1v3" -type f -delete 2>/dev/null || true
+          find . -name "*.perspectivev3" -type f -delete 2>/dev/null || true
+          find . -name "*.xcuserstate" -type f -delete 2>/dev/null || true
+          
+          # 6. 验证清理结果
+          echo ""
+          echo "📊 验证清理结果:"
+          XCUSERDATA_COUNT=$(find . -name "xcuserdata" -type d 2>/dev/null | wc -l | tr -d ' ')
+          XCUSERSTATE_COUNT=$(find . -name "*.xcuserstate" -type f 2>/dev/null | wc -l | tr -d ' ')
+          
+          if [ "$XCUSERDATA_COUNT" -eq "0" ] && [ "$XCUSERSTATE_COUNT" -eq "0" ]; then
+            echo "✅ 清理验证通过 - 未发现用户特定文件"
+          else
+            echo "⚠️  警告: 仍有 $XCUSERDATA_COUNT 个xcuserdata目录"
+            echo "⚠️  警告: 仍有 $XCUSERSTATE_COUNT 个xcuserstate文件"
+            # 再次尝试清理
+            find . -name "xcuserdata" -type d -print -exec rm -rf {} + 2>/dev/null || true
+            find . -name "*.xcuserstate" -type f -print -delete 2>/dev/null || true
+          fi
+          
+          echo "✓ 深度清理完成"
       
       - name: 🔐 导入证书和Provisioning Profile
         env:
